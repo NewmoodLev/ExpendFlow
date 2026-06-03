@@ -457,6 +457,10 @@ app.get('/', (req: Request, res: Response) => {
   res.send('Expense Tracker API is running');
 });
 
+app.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok' });
+});
+
 connectDB()
   .then(() => {
     app.listen(PORT, () => {
