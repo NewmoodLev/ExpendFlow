@@ -391,11 +391,11 @@ app.put('/api/profile', authMiddleware, async (req: Request, res: Response) => {
       { returnDocument: 'after' }
     );
     
-    if (!result.value) {
+    if (!result) {
       return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
     }
     
-    const user = result.value;
+    const user = result;
     res.json({
       id: user._id.toHexString(),
       username: user.username,
