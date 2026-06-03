@@ -413,40 +413,86 @@ app.post('/api/ai-summary', authMiddleware, async (req: Request, res: Response) 
   try {
     const userId = (req as any).userId as string;
     const { question } = req.body as { question?: string };
-    
+
     const db = getDB();
     const transactions = await db.collection('transactions').find({ userId: new ObjectId(userId) }).toArray();
-    
+
     const income = transactions.filter((item) => item.type === 'income').reduce((acc, item) => acc + item.amount, 0);
     const expense = transactions.filter((item) => item.type === 'expense').reduce((acc, item) => acc + item.amount, 0);
     const balance = income - expense;
-    
-    // Group by tag
+
     const byTag: { [key: string]: number } = {};
     transactions.forEach((t) => {
       byTag[t.tag] = (byTag[t.tag] || 0) + (t.type === 'expense' ? -t.amount : t.amount);
     });
-    
-    const topExpenseTag = Object.entries(byTag)
-      .filter(([_, amount]) => amount < 0)
-      .sort(([_, a], [__, b]) => a - b)[0];
-    
-    // Generate AI response
-    const summary = `คุณมีรายได้รวม ${income.toFixed(2)} บาท ใช้จ่าย ${expense.toFixed(2)} บาท โดยเหลือคงเหลือ ${balance.toFixed(2)} บาท`;
-    
-    const insights = [
-      `อัตราการใช้จ่าย: ${expense > 0 && income > 0 ? ((expense / income * 100).toFixed(1)) : 0}% ของรายได้`,
-      topExpenseTag ? `ประเภทค่าใช้จ่ายที่สูงที่สุด: ${topExpenseTag[0]} (${Math.abs(topExpenseTag[1]).toFixed(2)} บาท)` : 'ยังไม่มีข้อมูลค่าใช้จ่าย',
-      `จำนวนธุรกรรม: ${transactions.length} รายการ`
-    ];
-    
-    const recommendations = [
-      balance >= 0 ? 'ดี! คุณมีเงินเหลืออยู่ สามารถนำไปออมหรือลงทุนได้' : 'เตือน: ค่าใช้จ่ายเกินรายได้ ควรควบคุมการใช้จ่าย',
-      'พยายามจัดสรรเงินของคุณตามหมวดหมู่ที่ชัดเจน',
-      'ติดตามรายรับรายจ่ายอย่างสม่ำเสมอเพื่อควบคุมการเงิน'
-    ];
-    
-    res.json({ summary, insights, recommendations });
+
+    const transactionSummary = Object.entries(byTag)
+      .map(([tag, amount]) => `- ${tag}: ${amount >= 0 ? '+' : ''}${amount.toFixed(2)} บาท`)
+      .join('\n');
+
+    const userQuestion = question?.trim() || 'วิเคราะห์การเงินของฉันและให้คำแนะนำ';
+
+    const prompt = `คุณเป็นที่ปรึกษาการเงินส่วนตัว วิเคราะห์ข้อมูลการเงินต่อไปนี้และตอบคำถามของผู้ใช้
+
+ข้อมูลการเงิน:
+- รายรับรวม: ${income.toFixed(2)} บาท
+- รายจ่ายรวม: ${expense.toFixed(2)} บาท  
+- คงเหลือ: ${balance.toFixed(2)} บาท
+- จำนวนธุรกรรม: ${transactions.length} รายการ
+
+แยกตาม Tag:
+${transactionSummary || '- ยังไม่มีข้อมูล'}
+
+คำถามของผู้ใช้: ${userQuestion}
+
+ตอบเป็นภาษาไทย ในรูปแบบ JSON เท่านั้น ไม่ต้องมีข้อความอื่น:
+{
+  "summary": "สรุปภาพรวมการเงิน 1-2 ประโยค",
+  "insights": ["ข้อสังเกต 1", "ข้อสังเกต 2", "ข้อสังเกต 3"],
+  "recommendations": ["คำแนะนำ 1", "คำแนะนำ 2", "คำแนะนำ 3"]
+}`;
+
+    const githubToken = process.env.GITHUB_TOKEN;
+    if (!githubToken) {
+      throw new Error('GITHUB_TOKEN not configured');
+    }
+
+    const aiRes = await fetch('https://models.inference.ai.azure.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${githubToken}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 800,
+        temperature: 0.7
+      })
+    });
+
+    if (!aiRes.ok) {
+      const errText = await aiRes.text();
+      console.error('GitHub AI error:', errText);
+      throw new Error('AI service unavailable');
+    }
+
+    const aiData = await aiRes.json();
+    const content = aiData.choices?.[0]?.message?.content || '';
+
+    let parsed;
+    try {
+      const clean = content.replace(/```json|```/g, '').trim();
+      parsed = JSON.parse(clean);
+    } catch {
+      parsed = {
+        summary: content,
+        insights: ['ไม่สามารถแยกข้อมูลเชิงลึกได้'],
+        recommendations: ['ไม่สามารถให้คำแนะนำได้']
+      };
+    }
+
+    res.json(parsed);
   } catch (err) {
     console.error('AI summary error:', err);
     res.status(500).json({ message: 'Failed to generate AI summary' });
