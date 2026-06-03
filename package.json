@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "name": "expense-tracker-app",
+  "version": "1.0.0",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "install:all": "npm install --workspace server && npm install --workspace client",
+    "dev": "npx concurrently \"npm --workspace server run dev\" \"npm --workspace client run dev\"",
+    "build": "npm run build --workspace server && npm run build --workspace client",
+    "start": "npm --workspace server run start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
