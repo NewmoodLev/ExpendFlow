@@ -279,11 +279,12 @@ app.get('/api/transactions', authMiddleware, async (req: Request, res: Response)
 app.post('/api/transactions', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).userId as string;
-    const { type, amount, description, tag } = req.body as {
+    const { type, amount, description, tag, date} = req.body as {
       type: 'income' | 'expense';
       amount: number;
       description: string;
       tag: string;
+      date?: string;
     };
 
     // Validation
@@ -309,7 +310,7 @@ app.post('/api/transactions', authMiddleware, async (req: Request, res: Response
       amount,
       description: cleanDescription,
       tag: cleanTag,
-      date: new Date()
+      date: date ? new Date(date) : new Date()   // ← แทนที่ date: new Date()
     });
 
     res.status(201).json({
@@ -406,6 +407,90 @@ app.put('/api/profile', authMiddleware, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Update profile error:', err);
     res.status(500).json({ message: 'Failed to update profile' });
+  }
+});
+
+// PUT /api/transactions/:id — แก้ไขรายการ
+app.put('/api/transactions/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId as string;
+    const { id } = req.params;
+
+    if (!id.match(/^[a-f0-9]{24}$/)) {
+      return res.status(400).json({ message: 'Invalid transaction ID' });
+    }
+
+    const { type, amount, description, tag, date } = req.body as {
+      type: 'income' | 'expense';
+      amount: number;
+      description: string;
+      tag: string;
+      date?: string;
+    };
+
+    if (!type || (type !== 'income' && type !== 'expense')) {
+      return res.status(400).json({ message: 'ประเภทไม่ถูกต้อง' });
+    }
+    if (!amount || typeof amount !== 'number' || amount <= 0 || amount > 1000000) {
+      return res.status(400).json({ message: 'จำนวนเงินไม่ถูกต้อง' });
+    }
+    if (!tag?.trim()) {
+      return res.status(400).json({ message: 'Tag ไม่ถูกต้อง' });
+    }
+
+    const cleanTag = sanitizeInput(tag);
+    const cleanDescription = sanitizeInput(description || '');
+
+    const db = getDB();
+    const result = await db.collection('transactions').findOneAndUpdate(
+      { _id: new ObjectId(id), userId: new ObjectId(userId) },
+      { $set: { type, amount, description: cleanDescription, tag: cleanTag,
+          ...(date ? { date: new Date(date) } : {}) } },
+      { returnDocument: 'after' }
+    );
+
+    if (!result) {
+      return res.status(404).json({ message: 'ไม่พบรายการ' });
+    }
+
+    res.json({
+      id: result._id.toHexString(),
+      type: result.type,
+      amount: result.amount,
+      description: result.description,
+      tag: result.tag,
+      date: result.date.toISOString()
+    });
+  } catch (err) {
+    console.error('Update transaction error:', err);
+    res.status(500).json({ message: 'Failed to update transaction' });
+  }
+});
+
+// DELETE /api/transactions/:id — ลบรายการ
+app.delete('/api/transactions/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId as string;
+    const { id } = req.params;
+
+    if (!id.match(/^[a-f0-9]{24}$/)) {
+      return res.status(400).json({ message: 'Invalid transaction ID' });
+    }
+
+    const db = getDB();
+    const result = await db.collection('transactions').deleteOne({
+      _id: new ObjectId(id),
+      userId: new ObjectId(userId)
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: 'ไม่พบรายการ' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete transaction error:', err);
+    res.status(500).json({ message: 'Failed to delete transaction' });
   }
 });
 

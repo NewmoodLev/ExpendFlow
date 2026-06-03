@@ -95,6 +95,7 @@ export async function createTransaction(data: {
   amount: number;
   description: string;
   tag: string;
+  date?: string;
 }) {
   const token = getToken();
   const response = await fetch(`${API_URL}/transactions`, {
@@ -133,4 +134,23 @@ export async function fetchAISummary(question?: string): Promise<AIResponse> {
     throw new Error('AI summary failed');
   }
   return response.json();
+}
+
+export async function updateTransaction(id: string, data: Partial<Transaction>) {
+  const res = await fetch(`${API_URL}/transactions/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteTransaction(id: string) {
+  const res = await fetch(`${API_URL}/transactions/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
